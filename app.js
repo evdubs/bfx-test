@@ -1,15 +1,16 @@
 'use strict';
 
-const addon = require('./build/Release/addon');
+const addon = require('./build/Release/bfx_test');
 
-var i = 0;
 setInterval(function(){
-  const buffer = Buffer.from(i.toString());
-
-  addon.Run(buffer, buffer.length, function(s) { 
-    console.log(`Asynchronously received ${s} from addon.Run`);
-  });
+  var i = Math.random();
+  var j = Math.random();
   
-  i++;
+  var bid = Math.min(i, j);
+  var ask = Math.max(i, j);
+
+  addon.BidAskAvg({ "bid" : bid, "ask" : ask }, function(s) { 
+    console.log(`Asynchronously received ${s} from addon.Run as the average between ${bid} and ${ask}`);
+  });
 }, 2000);
 

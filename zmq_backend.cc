@@ -40,7 +40,12 @@ public:
     }
 };
 
-blocking_deque<string>* in_q = new blocking_deque<string>();
+struct BidAsk {
+  double bid;
+  double ask;
+};
+
+blocking_deque<BidAsk>* in_q = new blocking_deque<BidAsk>();
 blocking_deque<string>* out_q = new blocking_deque<string>();
 
 void buffer_delete_callback(char* data, void* str) {
@@ -69,7 +74,7 @@ class PullWorker : public AsyncWorker {
 
 void* context = zmq_ctx_new();
 
-void Push() {
+void ZmqPush() {
   std::cout << "Sender\n";
   
   void* PushSocket = zmq_socket(context, ZMQ_PUSH);
@@ -80,16 +85,16 @@ void Push() {
   }
   
   while(true) {
-    string s = in_q->pop(); // blocks
+    BidAsk ba = in_q->pop(); // blocks
     zmq_msg_t msg;
-    zmq_msg_init_size(&msg, s.length() + 1);
-    memcpy(zmq_msg_data(&msg), s.c_str(), s.length() + 1);
+    zmq_msg_init_size(&msg, sizeof(BidAsk));
+    memcpy(zmq_msg_data(&msg), &ba, sizeof(BidAsk));
     
     zmq_msg_send(&msg, PushSocket, 0);
   }
 }
 
-void Pull() {
+void ZmqPull() {
   std::cout << "Receiver\n";
   
   void* PullSocket = zmq_socket(context, ZMQ_PULL);
@@ -103,34 +108,43 @@ void Pull() {
     zmq_msg_t msg;
     zmq_msg_init(&msg);
     zmq_msg_recv(&msg, PullSocket, 0);
-    string s = string((char*) zmq_msg_data(&msg));
+    BidAsk ba = *((BidAsk *) zmq_msg_data(&msg));
     
-    std::cout << "Received " << s << " from ZMQ\n";
+    std::cout << "Received " << ba.bid << " " << ba.ask << " from ZMQ\n";
     
-    out_q->push(s);
+    double mid = (ba.bid + ba.ask) / 2;
+    
+    std::cout << "Computed " << mid << " as an average price\n";
+    
+    out_q->push(std::to_string(mid));
   }
 }
 
-NAN_METHOD(Run) {
-  char* buffer = (char*) node::Buffer::Data(info[0]->ToObject());
-  unsigned int size = info[1]->Uint32Value();
-  Callback* callback = new Callback(info[2].As<Function>());
+NAN_METHOD(BidAskAvg) {
+  Local<Object> obj = info[0]->ToObject();
+  Local<String> bidKey = Nan::New<String>("bid").ToLocalChecked();
+  Local<String> askKey = Nan::New<String>("ask").ToLocalChecked();
+  
+  double bidVal = Nan::Get(obj, bidKey).ToLocalChecked()->NumberValue();
+  double askVal = Nan::Get(obj, askKey).ToLocalChecked()->NumberValue();
+  
+  std::cout << "Called Run with " << bidVal << " " << askVal << "\n";
+  
+  Callback* callback = new Callback(info[1].As<Function>());
   
   AsyncQueueWorker(new PullWorker(callback));
   
-  string s = string(buffer, size);
+  BidAsk ba = { bidVal, askVal };
   
-  std::cout << "Called Run with " << s << "\n";
-  
-  in_q->push(s);
+  in_q->push(ba);
 }
 
 NAN_MODULE_INIT(Init) {
-  Nan::Set(target, New<String>("Run").ToLocalChecked(),
-    GetFunction(New<FunctionTemplate>(Run)).ToLocalChecked());
+  Nan::Set(target, New<String>("BidAskAvg").ToLocalChecked(),
+    GetFunction(New<FunctionTemplate>(BidAskAvg)).ToLocalChecked());
   
-  new thread(Push);
-  new thread(Pull);
+  new thread(ZmqPush);
+  new thread(ZmqPull);
 }
 
 NODE_MODULE(bfx_test, Init)
