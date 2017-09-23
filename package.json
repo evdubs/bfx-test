@@ -1,0 +1,12 @@
+{
+  "name": "bfx-test",
+  "version": "0.0.1",
+  "private": true,
+  "gypfile": true,
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "nan": "^2.7.0"
+  }
+}
